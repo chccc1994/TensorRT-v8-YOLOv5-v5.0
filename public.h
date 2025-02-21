@@ -3,7 +3,6 @@
 
 #include <iostream>
 #include <fstream>
-#include <unistd.h>
 #include <string.h>
 #include <cmath>
 #include <iomanip>
@@ -12,10 +11,18 @@
 #include <vector>
 #include <map>
 
+#include <opencv2/opencv.hpp>
+
+#ifdef _WIN32
+#include <windows.h>  // For Windows specific functionality
+#else
+#include <unistd.h>   // For Linux specific functionality
+#endif
+
+// CUDA and TensorRT headers
 #include <NvInfer.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
-#include <opencv2/opencv.hpp>
 
 #define CHECK(call) check(call, __LINE__, __FILE__)
 
@@ -30,7 +37,6 @@ inline bool check(cudaError_t e, int iLine, const char *szFile)
 }
 
 using namespace nvinfer1;
-
 
 class Logger : public ILogger
 {
@@ -67,7 +73,6 @@ public:
         std::cerr << msg << std::endl;
     }
 };
-
 
 // get the size in byte of a TensorRT data type
 __inline__ size_t dataTypeToSize(DataType dataType)

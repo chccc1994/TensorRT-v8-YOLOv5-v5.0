@@ -125,27 +125,44 @@ docker pull nvcr.io/nvidia/tensorrt:22.04-py3
 - 具体过程可参考下面步骤
 
 ```bash
-git clone -b v5.0 https://github.com/ultralytics/yolov5.git
-git clone https://github.com/emptysoal/yolov5-v5.0_tensorrt-v8.2.git
+# 下载YOLOv5
+# git clone -b v5.0 https://github.com/ultralytics/yolov5.git 分支不存在
+# windows平台
+wget https://github.com/ultralytics/yolov5/archive/refs/tags/v5.0.zip
+# Linux 平台
+# wget https://github.com/ultralytics/yolov5/archive/refs/tags/v5.0.tar.gz
+
+# 下载项目TensorRT-v8-YOLOv5-v5.0
+git clone https://github.com/emptysoal/TensorRT-v8-YOLOv5-v5.0.git
+
+# 下载yolov5s.pt 需要注意yolov5s.pt来源 一定是/v5.0/yolov5s.pt
 # download https://github.com/ultralytics/yolov5/releases/download/v5.0/yolov5s.pt
-cp {tensorrt}/pth2wts.py {ultralytics}/yolov5
-cd {ultralytics}/yolov5
+# 文件目录
+# ├─ TensorRT-v8-YOLOv5-v5.0
+# └─ yolov5
+
+cp ./TensorRT-v8-YOLOv5-v5.0/pth2wts.py ./yolov5
+cd yolov5
 python pth2wts.py
 # a file 'para.wts' will be generated.
 ```
 
 2. 构建 `.plan` 序列化文件并推理
+> 在执行完 ./trt_infer 自动生成`model.plan`.
 
-- 主要过程为：把上一步生成的`para.wts`文件复制到本项目目录下，在本项目中依次运行`make`和`./trt_infer`
+
+- 主要过程为：把上一步生成的`para.wts`文件复制到本项目目录下，在本项目中依次运行`make`和`./trt_infer`，自动生成`model.plan`
 - 具体过程可参考下面步骤
 
 ```bash
-cp {ultralytics}/yolov5/para.wts {tensorrt}/
-cd {tensorrt}/
+cp ./yolov5/para.wts ./TensorRT-v8-YOLOv5-v5.0/
+cd TensorRT-v8-YOLOv5-v5.0/
 mkdir images  # and put some images in it
 # update CLASS_NUM in yololayer.h if your model is trained on custom dataset
 # you can also update INPUT_H、INPUT_W in yololayer.h, update NET(s/m/l/x) in trt_infer.cpp
-make
+# 执行编译
+make 
+# 运行
 ./trt_infer
 # result images will be generated in present dir
 ```

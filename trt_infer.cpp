@@ -4,6 +4,17 @@
 #include "preprocess.h"
 #include "calibrator.h"
 
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <map>
+#include <string>
+
+#ifdef _WIN32
+#include <windows.h>  // For Windows-specific file handling
+#else
+#include <unistd.h>   // For POSIX-compliant systems (Linux/Mac)
+#endif
 using namespace nvinfer1;
 
 
@@ -127,7 +138,92 @@ void buildNetwork(INetworkDefinition* network, IOptimizationProfile* profile, IB
     std::cout << "Succeeded building total network!" << std::endl;
 }
 
+ICudaEngine* getEngine() 
+{
+    ICudaEngine *engine = nullptr;
 
+    bool fileExists = false;
+
+#ifdef _WIN32
+    // Windows platform
+    DWORD dwAttrib = GetFileAttributes(trtFile.c_str());
+    fileExists = (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+#else
+    // Linux platform
+    fileExists = (access(trtFile.c_str(), F_OK) == 0);
+#endif
+
+    if (fileExists)
+    {
+        std::ifstream engineFile(trtFile, std::ios::binary);
+        long int      fsize = 0;
+
+        engineFile.seekg(0, engineFile.end);
+        fsize = engineFile.tellg();
+        engineFile.seekg(0, engineFile.beg);
+        std::vector<char> engineString(fsize);
+        engineFile.read(engineString.data(), fsize);
+        if (engineString.size() == 0) { std::cout << "Failed getting serialized engine!" << std::endl; return nullptr; }
+        std::cout << "Succeeded getting serialized engine!" << std::endl;
+
+        IRuntime *runtime {createInferRuntime(gLogger)};
+        engine = runtime->deserializeCudaEngine(engineString.data(), fsize);
+        if (engine == nullptr) { std::cout << "Failed loading engine!" << std::endl; return nullptr; }
+        std::cout << "Succeeded loading engine!" << std::endl;
+    }
+    else
+    {
+        IBuilder *            builder     = createInferBuilder(gLogger);
+        INetworkDefinition *  network     = builder->createNetworkV2(1U << int(NetworkDefinitionCreationFlag::kEXPLICIT_BATCH));
+        IOptimizationProfile* profile     = builder->createOptimizationProfile();
+        IBuilderConfig *      config      = builder->createBuilderConfig();
+        config->setMaxWorkspaceSize(1 << 30);
+        IInt8Calibrator *     pCalibrator = nullptr;
+        if (bFP16Mode)
+        {
+            config->setFlag(BuilderFlag::kFP16);
+        }
+        if (bINT8Mode)
+        {
+            config->setFlag(BuilderFlag::kINT8);
+            int batchSize = 4;
+            pCalibrator = new Int8EntropyCalibrator2(batchSize, INPUT_W, INPUT_H, calibrationDataPath.c_str(), cacheFile.c_str());
+            config->setInt8Calibrator(pCalibrator);
+        }
+        // load .wts
+        std::map<std::string, Weights> weightMap = loadWeights(wtsFile);
+
+        buildNetwork(network, profile, config, weightMap);
+
+        std::cout << "Building engine, please wait for a while..." << std::endl;
+        IHostMemory* engineString = builder->buildSerializedNetwork(*network, *config);
+        std::cout << "Succeeded building serialized engine!" << std::endl;
+
+        // Release host memory
+        for (auto& mem : weightMap)
+        {
+            free((void*)(mem.second.values));
+        }
+
+        IRuntime* runtime {createInferRuntime(gLogger)};
+        engine = runtime->deserializeCudaEngine(engineString->data(), engineString->size());
+        if (engine == nullptr) { std::cout << "Failed building engine!" << std::endl; return nullptr; }
+        std::cout << "Succeeded building engine!" << std::endl;
+
+        if (bINT8Mode && pCalibrator != nullptr)
+        {
+            delete pCalibrator;
+        }
+
+        std::ofstream engineFile(trtFile, std::ios::binary);
+        engineFile.write(static_cast<char *>(engineString->data()), engineString->size());
+        std::cout << "Succeeded saving .plan file!" << std::endl;
+    }
+
+    return engine;
+}
+
+#if 0
 ICudaEngine* getEngine()
 {
     ICudaEngine *engine = nullptr;
@@ -202,6 +298,7 @@ ICudaEngine* getEngine()
     return engine;
 }
 
+#endif
 
 void inference_one(IExecutionContext* context, float* inputData, float* outputData, std::vector<void *> vBufferD, std::vector<int> vTensorSize)
 {
@@ -268,7 +365,7 @@ int run()
         for (size_t j = 0; j < res.size(); j++)
         {
             cv::Rect r = get_rect(img, res[j].bbox);
-            cv::rectangle(img, r, cv::Scalar(255, 0, 255), 2);
+            cv::rectangle(img, r, cv::Scalar(0, 255, 0), 2);
             cv::putText(img, std::to_string((int)res[j].class_id), cv::Point(r.x, r.y - 1), cv::FONT_HERSHEY_PLAIN, 1.2, cv::Scalar(255, 255, 255), 2);
         }
 
